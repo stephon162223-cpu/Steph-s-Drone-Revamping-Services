@@ -1,97 +1,188 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const Alpaca = require("alpaca-trade-api");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Paper Trading Platform</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: #020617;
+      padding: 15px;
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+    }
+    .container {
+      max-width: 1000px;
+      margin: auto;
+      padding: 20px;
+    }
+    input, button, select {
+      padding: 10px;
+      margin: 5px 0;
+      width: 100%;
+      border-radius: 6px;
+      border: none;
+    }
+    button {
+      background: #22c55e;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #16a34a;
+    }
+    .card {
+      background: #020617;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+    }
+    .hidden {
+      display: none;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #334155;
+      text-align: left;
+    }
+  </style>
+</head>
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+<body>
+<header>📈 Paper Trading Dashboard</header>
 
-const alpaca = new Alpaca({
-  keyId: process.env.ALPACA_KEY,
-  secretKey: process.env.ALPACA_SECRET,
-  paper: true
-});
+<div class="container">
 
-/* =========================
-   ACCOUNT INFO
-========================= */
-app.get("/account", async (req, res) => {
-  try {
-    const account = await alpaca.getAccount();
-    res.json({
-      cash: account.cash,
-      equity: account.equity
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  <!-- LOGIN -->
+  <div id="loginBox" class="card">
+    <h3>Login</h3>
+    <input id="username" placeholder="Username" />
+    <button onclick="login()">Login</button>
+  </div>
 
-/* =========================
-   POSITIONS
-========================= */
-app.get("/positions", async (req, res) => {
-  try {
-    const positions = await alpaca.getPositions();
-    res.json(positions);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  <!-- DASHBOARD -->
+  <div id="dashboard" class="hidden">
 
-/* =========================
-   PLACE TRADE
-========================= */
-app.post("/trade", async (req, res) => {
-  const { symbol, qty, side } = req.body;
+    <div class="row">
 
-  if (!symbol || !qty || !side) {
-    return res.status(400).json({ error: "Missing fields" });
-  }
+      <!-- ACCOUNT -->
+      <div class="card">
+        <h3>Account</h3>
+        <p>Cash: <span id="cash">$0</span></p>
+        <p>Equity: <span id="equity">$0</span></p>
+        <button onclick="loadAccount()">Refresh</button>
+      </div>
 
-  try {
-    const order = await alpaca.createOrder({
-      symbol: symbol.toUpperCase(),
-      qty: Number(qty),
-      side,
-      type: "market",
-      time_in_force: "gtc"
-    });
+      <!-- TRADE -->
+      <div class="card">
+        <h3>Place Trade</h3>
+        <input id="symbol" placeholder="Symbol (AAPL)" />
+        <input id="qty" type="number" placeholder="Quantity" />
+        <select id="side">
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+        </select>
+        <button onclick="placeTrade()">Execute</button>
+      </div>
 
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    </div>
 
-/* =========================
-   SIMPLE BOT (AUTOMATION)
-========================= */
-app.post("/bot", async (req, res) => {
-  try {
-    // Example strategy: Buy 1 share of AAPL
-    const order = await alpaca.createOrder({
-      symbol: "AAPL",
-      qty: 1,
-      side: "buy",
-      type: "market",
-      time_in_force: "gtc"
-    });
+    <!-- POSITIONS -->
+    <div class="card">
+      <h3>Open Positions</h3>
+      <table>
+        <thead>
+          <tr><th>Symbol</th><th>Qty</th><th>Avg Price</th></tr>
+        </thead>
+        <tbody id="positions"></tbody>
+      </table>
+    </div>
 
-    res.json({
-      message: "Bot executed",
-      order
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    <!-- AUTOMATION -->
+    <div class="card">
+      <h3>Strategy Automation</h3>
+      <p>This executes a backend strategy (example: buy AAPL).</p>
+      <button onclick="runBot()">Run Bot</button>
+    </div>
 
-/* =========================
-   SERVER START
-========================= */
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`✅ Backend running on http://localhost:${PORT}`);
-});
+  </div>
+</div>
+
+<script>
+const API = "http://localhost:3000"; // backend URL
+
+function login() {
+  const user = document.getElementById("username").value;
+  if (!user) return alert("Enter username");
+
+  localStorage.setItem("user", user);
+  document.getElementById("loginBox").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  loadAccount();
+  loadPositions();
+}
+
+async function loadAccount() {
+  const res = await fetch(`${API}/account`);
+  const data = await res.json();
+  document.getElementById("cash").innerText = `$${Number(data.cash).toFixed(2)}`;
+  document.getElementById("equity").innerText = `$${Number(data.equity).toFixed(2)}`;
+}
+
+async function placeTrade() {
+  const symbol = document.getElementById("symbol").value;
+  const qty = document.getElementById("qty").value;
+  const side = document.getElementById("side").value;
+
+  const res = await fetch(`${API}/trade`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol, qty, side })
+  });
+
+  const data = await res.json();
+  alert("Trade submitted");
+  loadPositions();
+}
+
+async function loadPositions() {
+  const res = await fetch(`${API}/positions`);
+  const data = await res.json();
+  const tbody = document.getElementById("positions");
+  tbody.innerHTML = "";
+
+  data.forEach(p => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${p.symbol}</td>
+        <td>${p.qty}</td>
+        <td>$${Number(p.avg_entry_price).toFixed(2)}</td>
+      </tr>`;
+  });
+}
+
+async function runBot() {
+  await fetch(`${API}/bot`, { method: "POST" });
+  alert("Strategy executed");
+  loadPositions();
+}
+</script>
+</body>
+</html>
